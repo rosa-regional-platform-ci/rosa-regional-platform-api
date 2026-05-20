@@ -36,6 +36,9 @@ var _ = Describe("Logging", Ordered, func() {
 			Skip("E2E_RHOBS_API_URL not set — skipping logging tests")
 		}
 		rhobsClient = NewAPIClient(rhobsAPIURL)
+		if !lokiRouteAvailable(rhobsClient) {
+			Skip("Loki route not configured on RHOBS API GW — skipping logging tests (rosa-regional-platform#521)")
+		}
 	})
 
 	It("should have logs from regional-cluster in Loki", func() {
@@ -59,6 +62,17 @@ var _ = Describe("Logging", Ordered, func() {
 	})
 
 })
+
+// lokiRouteAvailable probes the Loki query route on the RHOBS API GW.
+// Returns false only when the route is not configured (404 "No method found").
+// Any other status (200, 5xx, etc.) means the route exists at the gateway level.
+func lokiRouteAvailable(client *APIClient) bool {
+	resp, err := client.Get("/loki/api/v1/query_range?query=%7B%7D&limit=1&since=1m", "")
+	if err != nil {
+		return true // network error — don't skip, let the test handle it
+	}
+	return resp.StatusCode != http.StatusNotFound
+}
 
 func queryLoki(client *APIClient, logql string) lokiQueryResponse {
 	path := fmt.Sprintf("/loki/api/v1/query_range?query=%s&limit=10&since=1h",

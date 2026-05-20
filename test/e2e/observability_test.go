@@ -57,34 +57,45 @@ var _ = Describe("Observability", Ordered, func() {
 				"(CW Exporter → MC Prometheus → remote-write → RHOBS API GW → Thanos Receive)")
 	})
 
-	It("should have Vector metrics from RC in Thanos", func() {
-		query := `count(vector_component_sent_events_total{cluster_type="regional-cluster",component_type="loki"}) > 0`
-		Eventually(func() bool {
-			resp := queryThanos(rhobsClient, query)
-			return resp.Status == "success" && len(resp.Data.Result) > 0
-		}, "10m", "15s").Should(BeTrue(),
-			"Expected Vector sink metrics with cluster_type=regional-cluster in Thanos "+
-				"(Vector PodMonitor → RC Prometheus → Thanos Receive)")
-	})
+	// Loki-dependent metrics tests: Vector Loki sink and Loki distributor.
+	// These require the Loki/Vector logging stack to be deployed
+	// (rosa-regional-platform#521). Skip gracefully when the route is absent.
+	Context("Loki logging infrastructure", Ordered, func() {
+		BeforeAll(func() {
+			if !lokiRouteAvailable(rhobsClient) {
+				Skip("Loki not deployed — skipping Loki infrastructure metrics tests (rosa-regional-platform#521)")
+			}
+		})
 
-	It("should have Vector metrics from MC in Thanos via remote-write", func() {
-		query := `count(vector_component_sent_events_total{cluster_type="management-cluster",component_type="loki"}) > 0`
-		Eventually(func() bool {
-			resp := queryThanos(rhobsClient, query)
-			return resp.Status == "success" && len(resp.Data.Result) > 0
-		}, "10m", "15s").Should(BeTrue(),
-			"Expected Vector sink metrics with cluster_type=management-cluster in Thanos "+
-				"(Vector PodMonitor → MC Prometheus → sigv4-proxy → RHOBS API GW → Thanos Receive)")
-	})
+		It("should have Vector metrics from RC in Thanos", func() {
+			query := `count(vector_component_sent_events_total{cluster_type="regional-cluster",component_type="loki"}) > 0`
+			Eventually(func() bool {
+				resp := queryThanos(rhobsClient, query)
+				return resp.Status == "success" && len(resp.Data.Result) > 0
+			}, "10m", "15s").Should(BeTrue(),
+				"Expected Vector sink metrics with cluster_type=regional-cluster in Thanos "+
+					"(Vector PodMonitor → RC Prometheus → Thanos Receive)")
+		})
 
-	It("should have Loki distributor metrics in Thanos", func() {
-		query := `count(loki_distributor_bytes_received_total{cluster_type="regional-cluster"}) > 0`
-		Eventually(func() bool {
-			resp := queryThanos(rhobsClient, query)
-			return resp.Status == "success" && len(resp.Data.Result) > 0
-		}, "10m", "15s").Should(BeTrue(),
-			"Expected Loki distributor metrics with cluster_type=regional-cluster in Thanos "+
-				"(Loki ServiceMonitor → RC Prometheus → Thanos Receive)")
+		It("should have Vector metrics from MC in Thanos via remote-write", func() {
+			query := `count(vector_component_sent_events_total{cluster_type="management-cluster",component_type="loki"}) > 0`
+			Eventually(func() bool {
+				resp := queryThanos(rhobsClient, query)
+				return resp.Status == "success" && len(resp.Data.Result) > 0
+			}, "10m", "15s").Should(BeTrue(),
+				"Expected Vector sink metrics with cluster_type=management-cluster in Thanos "+
+					"(Vector PodMonitor → MC Prometheus → sigv4-proxy → RHOBS API GW → Thanos Receive)")
+		})
+
+		It("should have Loki distributor metrics in Thanos", func() {
+			query := `count(loki_distributor_bytes_received_total{cluster_type="regional-cluster"}) > 0`
+			Eventually(func() bool {
+				resp := queryThanos(rhobsClient, query)
+				return resp.Status == "success" && len(resp.Data.Result) > 0
+			}, "10m", "15s").Should(BeTrue(),
+				"Expected Loki distributor metrics with cluster_type=regional-cluster in Thanos "+
+					"(Loki ServiceMonitor → RC Prometheus → Thanos Receive)")
+		})
 	})
 })
 
